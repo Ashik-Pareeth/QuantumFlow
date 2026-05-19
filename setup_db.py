@@ -8,7 +8,6 @@ Base.metadata.create_all(bind=engine)
 print("2. Attempting to convert 'candles' to a TimescaleDB Hypertable...")
 try:
     with engine.connect() as conn:
-        # This is the magic TimescaleDB command. It chunks the data by the 'time' column.
         conn.execute(
             text("SELECT create_hypertable('candles', 'time', if_not_exists => TRUE);")
         )

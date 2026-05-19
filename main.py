@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from api.routes import router
+import os
 
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -34,4 +35,7 @@ def health_check():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    API_HOST = os.getenv("API_HOST")
+    API_PORT = int(os.getenv("API_PORT"))
+
+    uvicorn.run("main:app", host=API_HOST, port=API_PORT, reload=True)

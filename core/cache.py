@@ -1,12 +1,21 @@
 import json
 import redis
 from core.logger import get_logger
+import os
 
 logger = get_logger(__name__)
 
+
+REDIS_HOST = os.getenv("REDIS_HOST")
+REDIS_PORT = int(os.getenv("REDIS_PORT"))
+CACHE_TTL = int(os.getenv("CACHE_TTL_SECONDS"))
+
 # Connect to the Dockerized Redis container
 # decode_responses=True ensures we get clean strings back instead of raw bytes
-redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
+redis_client = redis.Redis(
+    host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True
+)
+
 
 CACHE_TTL = 60  # Cache lives for 60 seconds
 HIGH_DEMAND_SYMBOLS = {"AAPL", "NVDA", "TSLA", "SPY", "QQQ", "BTC"}

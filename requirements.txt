@@ -12,3 +12,4 @@ joblib
 lightgbm
 hmmlearn
 redis
+python-dotenv
