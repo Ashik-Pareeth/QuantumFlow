@@ -10,7 +10,8 @@ class QuantumFlowException(Exception):
 class ModelNotTrainedError(QuantumFlowException):
     def __init__(self, symbol: str):
         super().__init__(
-            message=f"Machine learning models for {symbol.upper()} are not trained. Please run the training pipeline first.",
+            message=f"Machine learning models for {symbol.upper()} are not trained."
+            " Please run the training pipeline first.",
             status_code=404,
         )
 
