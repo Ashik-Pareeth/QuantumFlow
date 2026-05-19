@@ -1,15 +1,19 @@
-import logging
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from exceptions.custom_errors import QuantumFlowException
+from core.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def custom_domain_exception_handler(request: Request, exc: QuantumFlowException):
     """Catches our custom business logic errors."""
+    logger.warning(
+        f"Domain Rule Triggered: {exc.message}",
+        extra={"request_path": request.url.path},
+    )
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": "Domain Error", "message": exc.message},
@@ -36,8 +40,11 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 async def global_exception_handler(request: Request, exc: Exception):
     """The 500 Catch-All."""
+    # This will now output a massive, highly detailed JSON block to your terminal
     logger.error(
-        f"CRITICAL SYSTEM ERROR at {request.url.path}: {repr(exc)}", exc_info=True
+        f"CRITICAL SYSTEM ERROR: {repr(exc)}",
+        exc_info=True,
+        extra={"request_path": request.url.path},
     )
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
