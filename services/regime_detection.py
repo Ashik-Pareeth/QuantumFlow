@@ -39,7 +39,7 @@ def detect_current_regime(symbol: str, df: pd.DataFrame):
     try:
         hmm_model = joblib.load(os.path.join(MODEL_DIR, f"{symbol.lower()}_hmm.pkl"))
     except FileNotFoundError:
-        return None, "HMM not trained"
+        return None, "HMM OFFLINE", True
 
     # Format the live data exactly how the HMM expects it
     df_live = df.copy()
@@ -62,8 +62,8 @@ def detect_current_regime(symbol: str, df: pd.DataFrame):
     current_atr = latest_data["atr"].iloc[0]
     avg_atr = df_live["atr"].mean()
 
-    is_dangerous = current_atr > (
-        avg_atr * 1.5
+    is_dangerous = bool(
+        current_atr > (avg_atr * 1.5)
     )  # If volatility is 50% higher than average
 
     return current_state, readable_state, is_dangerous
