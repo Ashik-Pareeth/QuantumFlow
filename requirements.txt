@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+yfinance
+pandas
+pydantic
+pandas-ta
+xgboost
+scikit-learn
+joblib
+lightgbm
+hmmlearn

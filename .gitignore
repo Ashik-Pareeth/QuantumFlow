@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+.env/
+.venv/
+
+# Environment Variables
+.env
+.env.*
+
+# IDEs
+.vscode/
+.idea/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Database
+*.sqlite3
+*.db
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build / Distribution
+build/
+dist/
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# mypy
+.mypy_cache/
+
+# Node.js
+node_modules/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+#flake8
+.flake8
+
+# FastAPI / Uvicorn
+uvicorn.log
+
+# PostgreSQL dumps
+*.sql
+
+# Model files
+*.pt
+*.pth
+*.ckpt
+*.onnx
+
+# Cache
+.cache/
+
+# Mac/Linux hidden files
+.*.swp
+
+#zip files
+*.zip
+
+#docx files
+*.docx
