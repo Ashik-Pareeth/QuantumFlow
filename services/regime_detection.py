@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from hmmlearn.hmm import GaussianHMM
 import joblib
 import os
@@ -50,12 +51,14 @@ def detect_current_regime(symbol: str, df: pd.DataFrame):
     latest_data = df_live.dropna().iloc[-1:]
     X_live = latest_data[["returns", "atr"]].values
 
-    # Predict the hidden state (will return 0, 1, or 2)
+    # Predict the hidden state (will return 0, 1, 2, 3, 4, or 5)
     current_state = int(hmm_model.predict(X_live)[0])
 
-    # HMM states are unsupervised, so we don't inherently know which number is
-    # "Bull" or "Bear".
-    # But we can look at the current volatility (ATR) to guess if it's dangerous.
+    # Get the dynamic human-readable labels
+    regime_labels = interpret_regimes(hmm_model)
+    readable_state = regime_labels[current_state]
+
+    # look at the current volatility (ATR) to guess if it's dangerous.
     current_atr = latest_data["atr"].iloc[0]
     avg_atr = df_live["atr"].mean()
 
@@ -63,4 +66,47 @@ def detect_current_regime(symbol: str, df: pd.DataFrame):
         avg_atr * 1.5
     )  # If volatility is 50% higher than average
 
-    return current_state, is_dangerous
+    return current_state, readable_state, is_dangerous
+
+
+def interpret_regimes(hmm_model):
+    """
+    Dynamically labels HMM states by analyzing their mathematical properties.
+    hmm_model.means_ is a matrix where:
+    Column 0 = Average Daily Return for that state
+    Column 1 = Average Volatility (ATR) for that state
+    """
+    labels = {}
+
+    # Extract the means for all 6 states
+    returns = hmm_model.means_[:, 0]
+    volatilities = hmm_model.means_[:, 1]
+
+    # Find the medians to establish baselines
+    median_return = np.median(returns)
+    median_vol = np.median(volatilities)
+
+    for i in range(hmm_model.n_components):
+        state_return = returns[i]
+        state_vol = volatilities[i]
+
+        # Determine Direction
+        if state_return > median_return and state_return > 0:
+            direction = "Bullish"
+        elif state_return < median_return and state_return < 0:
+            direction = "Bearish"
+        else:
+            direction = "Sideways/Choppy"
+
+        # Determine Volatility
+        if state_vol > (median_vol * 1.2):
+            vol_label = "Extreme Volatility"
+        elif state_vol > median_vol:
+            vol_label = "High Volatility"
+        else:
+            vol_label = "Low Volatility"
+
+        # Combine into a human-readable label
+        labels[i] = f"{vol_label} {direction}"
+
+    return labels

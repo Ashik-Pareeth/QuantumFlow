@@ -106,7 +106,7 @@ def get_live_signal(symbol: str, db: Session = Depends(get_db)):
 
     ensemble_score = (xgb_prob + lgb_prob) / 2
 
-    current_state, is_dangerous = detect_current_regime(symbol, df)
+    current_state, readable_state, is_dangerous = detect_current_regime(symbol, df)
 
     # 5. Format the Signal
     signal = "NEUTRAL"
@@ -126,6 +126,7 @@ def get_live_signal(symbol: str, db: Session = Depends(get_db)):
         "confidence_score": round(ensemble_score * 100, 2),
         "market_regime": {
             "hmm_state": current_state,
+            "description": readable_state,
             "high_volatility_warning": is_dangerous,
         },
         "breakdown": {
