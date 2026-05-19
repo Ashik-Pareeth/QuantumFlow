@@ -8,6 +8,8 @@ from services.market_data import fetch_and_store_candles
 from services.feature_engineering import generate_features
 from services.ml_engine import train_ensemble_model
 from services.regime_detection import train_regime_model, detect_current_regime
+from core.cache import get_cached_signal, set_cached_signal
+from exceptions.custom_errors import ModelNotTrainedError, QuantumFlowException
 
 router = APIRouter()
 
@@ -74,6 +76,10 @@ def train_model(symbol: str, limit: int = 1000, db: Session = Depends(get_db)):
 def get_live_signal(symbol: str, db: Session = Depends(get_db)):
     """Generates a live trading signal based on the most recent market data."""
 
+    cached_response = get_cached_signal(symbol)
+    if cached_response:
+        return cached_response
+
     # 1. Load the trained brains
     MODEL_DIR = "models/"
     try:
@@ -83,16 +89,15 @@ def get_live_signal(symbol: str, db: Session = Depends(get_db)):
             os.path.join(MODEL_DIR, f"{symbol.lower()}_features.pkl")
         )
     except FileNotFoundError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Models for {symbol} not found. Run /train/{symbol} first.",
-        )
+        raise ModelNotTrainedError(symbol=symbol)
 
     # 2. Get the latest features
     # We only need enough data to calculate the moving averages (limit=100 is plenty)
     df = generate_features(symbol, db, limit=100)
     if df is None or df.empty:
-        raise HTTPException(status_code=400, detail="Not enough live data to predict.")
+        raise QuantumFlowException(
+            message="Not enough live data to predict.", status_code=400
+        )
 
     # 3. Grab the absolute newest row of data (Today/Right Now)
     latest_data = df.iloc[-1:]
@@ -118,7 +123,7 @@ def get_live_signal(symbol: str, db: Session = Depends(get_db)):
     if is_dangerous:
         signal = f"BLOCKED BY RISK GATE (Extreme Volatility, Regime {current_state})"
 
-    return {
+    final_payload = {
         "symbol": symbol.upper(),
         "timestamp": latest_data.index[0].isoformat(),
         "latest_close_price": float(latest_data["close"].iloc[0]),
@@ -134,3 +139,8 @@ def get_live_signal(symbol: str, db: Session = Depends(get_db)):
             "lightgbm_probability": round(lgb_prob * 100, 2),
         },
     }
+
+    # 7. SAVE TO CACHE: Store it in Docker for the next user
+    set_cached_signal(symbol, final_payload)
+
+    return final_payload
