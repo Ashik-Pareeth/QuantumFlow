@@ -7,6 +7,7 @@ from db.models import Candle
 from services.market_data import fetch_and_store_candles
 from services.feature_engineering import generate_features
 from services.ml_engine import train_ensemble_model
+from services.regime_detection import train_regime_model, detect_current_regime
 
 router = APIRouter()
 
@@ -27,7 +28,7 @@ def ingest_data(symbol: str, period: str = "1y", db: Session = Depends(get_db)):
 @router.get("/candles/{symbol}")
 def get_candles(symbol: str, limit: int = 100, db: Session = Depends(get_db)):
     """Retrieves the most recent candles from the database."""
-    # We query by symbol, order by time descending (newest first), and limit the results
+    # We query by symbol, order by time descending, and limit the results
     candles = (
         db.query(Candle)
         .filter(Candle.symbol == symbol.upper())
@@ -59,6 +60,9 @@ def get_features(symbol: str, limit: int = 500, db: Session = Depends(get_db)):
 def train_model(symbol: str, limit: int = 1000, db: Session = Depends(get_db)):
     """Trains the XGBoost classifier on historical features and saves the model."""
     result = train_ensemble_model(symbol, db, limit)
+
+    regime_result = train_regime_model(symbol, db, limit)
+    result["regime_status"] = regime_result.get("message", "Failed")
 
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -102,12 +106,17 @@ def get_live_signal(symbol: str, db: Session = Depends(get_db)):
 
     ensemble_score = (xgb_prob + lgb_prob) / 2
 
+    current_state, is_dangerous = detect_current_regime(symbol, df)
+
     # 5. Format the Signal
     signal = "NEUTRAL"
     if ensemble_score >= 0.55:
-        signal = "BUY (HIGH CONFIDENCE)"
+        signal = "BUY "
     elif ensemble_score <= 0.45:
-        signal = "SELL (HIGH CONFIDENCE)"
+        signal = "SELL "
+
+    if is_dangerous:
+        signal = f"BLOCKED BY RISK GATE (Extreme Volatility, Regime {current_state})"
 
     return {
         "symbol": symbol.upper(),
@@ -115,6 +124,10 @@ def get_live_signal(symbol: str, db: Session = Depends(get_db)):
         "latest_close_price": float(latest_data["close"].iloc[0]),
         "signal": signal,
         "confidence_score": round(ensemble_score * 100, 2),
+        "market_regime": {
+            "hmm_state": current_state,
+            "high_volatility_warning": is_dangerous,
+        },
         "breakdown": {
             "xgboost_probability": round(xgb_prob * 100, 2),
             "lightgbm_probability": round(lgb_prob * 100, 2),
