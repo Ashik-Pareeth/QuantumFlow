@@ -19,5 +19,5 @@ class ModelNotTrainedError(QuantumFlowException):
 class RiskGateBlockedError(QuantumFlowException):
     def __init__(self, reason: str):
         super().__init__(
-            message=f"Trade blocked by Risk Gate: {reason}", status_code=403
+            message=f"Trade blocked by Risk Gate: {reason}", status_code=422
         )

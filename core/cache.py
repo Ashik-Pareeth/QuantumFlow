@@ -1,14 +1,17 @@
 import json
 import redis
 from core.logger import get_logger
+from dotenv import load_dotenv
 import os
+
+load_dotenv()
 
 logger = get_logger(__name__)
 
 
-REDIS_HOST = os.getenv("REDIS_HOST")
-REDIS_PORT = int(os.getenv("REDIS_PORT"))
-CACHE_TTL = int(os.getenv("CACHE_TTL_SECONDS"))
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+CACHE_TTL = int(os.getenv("CACHE_TTL_SECONDS", "60"))
 
 # Connect to the Dockerized Redis container
 # decode_responses=True ensures we get clean strings back instead of raw bytes

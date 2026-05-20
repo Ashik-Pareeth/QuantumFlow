@@ -13,3 +13,5 @@ lightgbm
 hmmlearn
 redis
 python-dotenv
+pytest
+httpx
