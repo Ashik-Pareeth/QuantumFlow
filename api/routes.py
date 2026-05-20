@@ -1,15 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 import os
 import joblib
+from decimal import Decimal
+
 from db.database import get_db
-from db.models import Candle
+from db.models import Wallet, Position, Trade, TradeSide, Candle
 from services.market_data import fetch_and_store_candles
 from services.feature_engineering import generate_features
 from services.ml_engine import train_ensemble_model
 from services.regime_detection import train_regime_model, detect_current_regime
 from core.cache import get_cached_signal, set_cached_signal
-from exceptions.custom_errors import ModelNotTrainedError, QuantumFlowException
+from api.schemas import BuyTradeRequest
+from exceptions.custom_errors import (
+    ModelNotTrainedError,
+    QuantumFlowException,
+    InsufficientDataError,
+    RiskGateBlockedError,
+)
 
 router = APIRouter()
 
@@ -20,8 +28,8 @@ def ingest_data(symbol: str, period: str = "1y", db: Session = Depends(get_db)):
     count = fetch_and_store_candles(symbol, db, period)
 
     if count == 0:
-        raise HTTPException(
-            status_code=404, detail=f"No data found for ticker {symbol}"
+        raise QuantumFlowException(
+            detail=f"No data found for ticker {symbol}", status_code=404
         )
 
     return {"message": f"Successfully ingested {count} candles for {symbol.upper()}"}
@@ -47,9 +55,9 @@ def get_features(symbol: str, limit: int = 500, db: Session = Depends(get_db)):
     df = generate_features(symbol, db, limit)
 
     if df is None or df.empty:
-        raise HTTPException(
-            status_code=404,
+        raise QuantumFlowException(
             detail=f"Not enough data to calculate features for {symbol}",
+            status_code=404,
         )
 
     # Convert the DataFrame back to a dictionary so FastAPI can return it as JSON
@@ -67,7 +75,7 @@ def train_model(symbol: str, limit: int = 1000, db: Session = Depends(get_db)):
     result["regime_status"] = regime_result.get("message", "Failed")
 
     if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
+        raise QuantumFlowException(detail=result["error"], status_code=400)
 
     return result
 
@@ -144,3 +152,126 @@ def get_live_signal(symbol: str, db: Session = Depends(get_db)):
     set_cached_signal(symbol, final_payload)
 
     return final_payload
+
+
+@router.post("/trade/buy")
+def execute_buy(request: BuyTradeRequest, db: Session = Depends(get_db)):
+    """Executes a trade, backed by the HMM Risk Gate."""
+    symbol = request.symbol.upper()
+
+    # ==========================================
+    # 1. RISK GATE & PRICING (Read Operations)
+    # ==========================================
+
+    latest_candle = (
+        db.query(Candle)
+        .filter(Candle.symbol == symbol)
+        .order_by(Candle.time.desc())
+        .first()
+    )
+    if not latest_candle:
+        raise QuantumFlowException(
+            message=f"No pricing data available for {symbol}", status_code=404
+        )
+
+    execution_price = latest_candle.close
+    total_cost = request.qty * execution_price
+
+    df = generate_features(symbol, db, limit=100)
+    if df is None or df.empty:
+        raise InsufficientDataError()
+
+    current_state, readable_state, is_dangerous = detect_current_regime(symbol, df)
+
+    if is_dangerous and not request.force_execution:
+        raise RiskGateBlockedError(
+            reason=f"Market regime is currently {readable_state}."
+            " To proceed anyway, confirm the risk.",
+            status_code=status.HTTP_409_CONFLICT,
+        )
+
+    # ==========================================
+    # 2. THE VIRTUAL ECONOMY (Write Operations)
+    # ==========================================
+
+    try:
+        # Lock the user's wallet row to prevent double-spend race conditions
+        wallet = (
+            db.query(Wallet)
+            .filter(Wallet.user_id == request.user_id)
+            .with_for_update()
+            .first()
+        )
+        if not wallet:
+            raise QuantumFlowException(message="Wallet not found.", status_code=404)
+
+        if wallet.cash_balance < total_cost:
+            raise QuantumFlowException(message="Insufficient funds.", status_code=400)
+
+        # 20% Position Limit Guardrail
+        positions = db.query(Position).filter(Position.user_id == request.user_id).all()
+        invested_value = sum((p.qty * p.avg_price) for p in positions)
+        estimated_portfolio_value = wallet.cash_balance + invested_value
+
+        if total_cost > (estimated_portfolio_value * Decimal("0.20")):
+            raise QuantumFlowException(
+                message="Position limit exceeded."
+                " You cannot invest more than 20% of your portfolio in a single asset.",
+                status_code=400,
+            )
+
+        # 1. Deduct Cash
+        wallet.cash_balance -= total_cost
+
+        # 2. Log the Trade (Immutable Ledger)
+        new_trade = Trade(
+            user_id=request.user_id,
+            symbol=symbol,
+            side=TradeSide.BUY,
+            qty=request.qty,
+            price=execution_price,
+            pnl=Decimal("0.00"),
+        )
+        db.add(new_trade)
+
+        # 3. Upsert the Position (Average Down Math)
+        position = (
+            db.query(Position)
+            .filter(Position.user_id == request.user_id, Position.symbol == symbol)
+            .first()
+        )
+
+        if position:
+            total_historical_cost = position.qty * position.avg_price
+            new_total_cost = total_historical_cost + total_cost
+            new_total_qty = position.qty + request.qty
+
+            position.avg_price = new_total_cost / new_total_qty
+            position.qty = new_total_qty
+        else:
+            position = Position(
+                user_id=request.user_id,
+                symbol=symbol,
+                qty=request.qty,
+                avg_price=execution_price,
+            )
+            db.add(position)
+
+        db.commit()
+
+        # TODO: Phase 4.5 -> Emit event to Redis Stream for Leaderboard Worker here
+
+        return {
+            "message": "BUY order executed successfully.",
+            "symbol": symbol,
+            "qty": request.qty,
+            "execution_price": execution_price,
+            "total_cost": total_cost,
+            "remaining_balance": wallet.cash_balance,
+            "new_avg_price": position.avg_price,
+            "market_regime_id": current_state,
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise e
