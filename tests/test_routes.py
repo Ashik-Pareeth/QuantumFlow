@@ -1,12 +1,15 @@
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import ANY, patch, MagicMock
 import numpy as np
 import pandas as pd
 
-from api.ml import router
+from api.data import router as data_router
+from api.ml import router as ml_router
+from api.trading import router as trading_router
 from db.database import get_db
+from db.models import TradeSide
 from exceptions.custom_errors import ModelNotTrainedError
 
 
@@ -16,7 +19,9 @@ def override_get_db():
 
 # Initialize a clean, isolated testing app instance
 app = FastAPI()
-app.include_router(router)
+app.include_router(data_router)
+app.include_router(ml_router)
+app.include_router(trading_router)
 app.dependency_overrides[get_db] = override_get_db
 
 
@@ -102,3 +107,57 @@ def test_predict_endpoint_cache_miss_success(
 
     # Verify it saved this compute block back to Redis for the next run
     mock_set_cache.assert_called_once()
+
+
+@patch("api.data.ingest_market_data")
+def test_ingest_endpoint_delegates_to_data_service(mock_ingest, client):
+    """Integration check for the thin data ingestion route."""
+    mock_ingest.return_value = {"message": "ok"}
+
+    response = client.post("/ingest/AAPL?period=6mo")
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "ok"}
+    mock_ingest.assert_called_once_with(symbol="AAPL", period="6mo", db=ANY)
+
+
+@patch("api.data.get_recent_candles")
+def test_candles_endpoint_delegates_to_data_service(mock_get_candles, client):
+    """Integration check for the candles route."""
+    mock_get_candles.return_value = [{"symbol": "AAPL", "close": 150}]
+
+    response = client.get("/candles/aapl?limit=5")
+
+    assert response.status_code == 200
+    assert response.json() == [{"symbol": "AAPL", "close": 150}]
+    mock_get_candles.assert_called_once_with(symbol="aapl", limit=5, db=ANY)
+
+
+@patch("api.trading.execute_trade_order")
+def test_trade_endpoint_delegates_to_trading_service(mock_execute_trade, client):
+    """Integration check for request parsing and service delegation."""
+    user_id = "85a3a49f-e498-44f4-974f-7f4cb2d60a40"
+    mock_execute_trade.return_value = {
+        "message": "BUY order executed successfully.",
+        "symbol": "AAPL",
+    }
+
+    response = client.post(
+        "/",
+        json={
+            "user_id": user_id,
+            "symbol": "aapl",
+            "side": "buy",
+            "qty": "1.5000",
+            "force_execution": True,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["symbol"] == "AAPL"
+    call_kwargs = mock_execute_trade.call_args.kwargs
+    assert str(call_kwargs["user_id"]) == user_id
+    assert call_kwargs["symbol"] == "AAPL"
+    assert call_kwargs["side"] == TradeSide.BUY
+    assert str(call_kwargs["qty"]) == "1.5000"
+    assert call_kwargs["force_execution"] is True
