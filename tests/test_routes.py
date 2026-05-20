@@ -4,12 +4,20 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 import numpy as np
 import pandas as pd
-from api.routes import router
+
+from api.ml import router
+from db.database import get_db
 from exceptions.custom_errors import ModelNotTrainedError
+
+
+def override_get_db():
+    yield MagicMock()
+
 
 # Initialize a clean, isolated testing app instance
 app = FastAPI()
 app.include_router(router)
+app.dependency_overrides[get_db] = override_get_db
 
 
 @pytest.fixture
@@ -18,7 +26,7 @@ def client():
     return TestClient(app)
 
 
-@patch("api.routes.get_cached_signal")
+@patch("services.ml_service.get_cached_signal")
 def test_predict_endpoint_cache_hit(mock_get_cache, client):
     """Proves that the endpoint hits the Redis shield instantly if data is cached."""
     # 1. Arrange
@@ -34,11 +42,13 @@ def test_predict_endpoint_cache_hit(mock_get_cache, client):
     assert response.json() == cached_payload
 
 
-@patch("api.routes.joblib.load")
-def test_predict_endpoint_model_not_trained(mock_load, client):
+@patch("services.ml_service.get_cached_signal")
+@patch("services.ml_service.joblib.load")
+def test_predict_endpoint_model_not_trained(mock_load, mock_get_cache, client):
     """Verifies standard exception propagation if artifacts do not exist on disk."""
     # 1. Arrange
     symbol = "TSLA"
+    mock_get_cache.return_value = None
     mock_load.side_effect = FileNotFoundError()
 
     # 2. Act & Assert
@@ -49,11 +59,11 @@ def test_predict_endpoint_model_not_trained(mock_load, client):
         client.get(f"/predict/{symbol}")
 
 
-@patch("api.routes.set_cached_signal")
-@patch("api.routes.detect_current_regime")
-@patch("api.routes.generate_features")
-@patch("api.routes.joblib.load")
-@patch("api.routes.get_cached_signal")
+@patch("services.ml_service.set_cached_signal")
+@patch("services.ml_service.detect_current_regime")
+@patch("services.ml_service.generate_features")
+@patch("services.ml_service.joblib.load")
+@patch("services.ml_service.get_cached_signal")
 def test_predict_endpoint_cache_miss_success(
     mock_get_cache, mock_load, mock_generate, mock_regime, mock_set_cache, client
 ):
@@ -86,7 +96,7 @@ def test_predict_endpoint_cache_miss_success(
     assert response.status_code == 200
     data = response.json()
     assert data["symbol"] == "AAPL"
-    assert data["signal"] == "BUY "
+    assert data["signal"] == "BUY"
     assert data["confidence_score"] == 65.0  # Average of 60% and 70%
     assert data["market_regime"]["high_volatility_warning"] is False
 

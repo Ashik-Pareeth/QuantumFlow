@@ -19,8 +19,7 @@ def test_model_not_trained_error_formatting():
 
 
 def test_risk_gate_error_formatting():
-    """Tests if the Risk Gate exception securely defaults to a 422
-    Unprocessable Entity."""
+    """Tests if the Risk Gate exception defaults to a 409 Conflict."""
     # 1. Arrange
     reason = "Extreme Volatility Bearish"
 
@@ -28,7 +27,7 @@ def test_risk_gate_error_formatting():
     error = RiskGateBlockedError(reason=reason)
 
     # 3. Assert
-    assert error.status_code == 422
+    assert error.status_code == 409
     assert reason in error.message
     assert "Risk Gate" in error.message
 
