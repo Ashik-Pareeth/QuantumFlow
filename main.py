@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from api.routes import router
+from api import data, ml, trading, portfolio, gamification
 import os
 
 from fastapi.exceptions import RequestValidationError
@@ -24,7 +24,13 @@ app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(Exception, global_exception_handler)
 
-app.include_router(router)
+app.include_router(data.router, prefix="/api/v1/data", tags=["Market Data"])
+app.include_router(ml.router, prefix="/api/v1/ml", tags=["Machine Learning Engine"])
+app.include_router(trading.router, prefix="/api/v1/trade", tags=["Trading Execution"])
+app.include_router(
+    portfolio.router, prefix="/api/v1/portfolio", tags=["User Portfolio"]
+)
+app.include_router(gamification.router, prefix="/api/v1/gamification")
 
 
 @app.get("/health")
