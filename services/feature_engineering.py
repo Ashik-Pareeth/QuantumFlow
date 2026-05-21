@@ -10,9 +10,6 @@ def generate_features(symbol: str, db: Session, limit: int = 500):
 
     candles = candle_repository.get_chronological_for_symbol(db, symbol, limit)
 
-    if not candles:
-        return None
-
     # 2. Convert to a Pandas DataFrame
     # We use a list comprehension to extract the data efficiently
     data = [
@@ -26,6 +23,9 @@ def generate_features(symbol: str, db: Session, limit: int = 500):
         }
         for c in candles
     ]
+
+    if not data:
+        return None
 
     df = pd.DataFrame(data)
     df.set_index("time", inplace=True)

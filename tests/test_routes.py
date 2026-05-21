@@ -109,7 +109,7 @@ def test_predict_endpoint_cache_miss_success(
     mock_set_cache.assert_called_once()
 
 
-@patch("api.data.ingest_market_data")
+@patch("api.routers.data.ingest_market_data")
 def test_ingest_endpoint_delegates_to_data_service(mock_ingest, client):
     """Integration check for the thin data ingestion route."""
     mock_ingest.return_value = {"message": "ok"}
@@ -121,7 +121,7 @@ def test_ingest_endpoint_delegates_to_data_service(mock_ingest, client):
     mock_ingest.assert_called_once_with(symbol="AAPL", period="6mo", db=ANY)
 
 
-@patch("api.data.get_recent_candles")
+@patch("api.routers.data.get_recent_candles")
 def test_candles_endpoint_delegates_to_data_service(mock_get_candles, client):
     """Integration check for the candles route."""
     mock_get_candles.return_value = [{"symbol": "AAPL", "close": 150}]
@@ -133,7 +133,7 @@ def test_candles_endpoint_delegates_to_data_service(mock_get_candles, client):
     mock_get_candles.assert_called_once_with(symbol="aapl", limit=5, db=ANY)
 
 
-@patch("api.trading.execute_trade_order")
+@patch("api.routers.trading.execute_trade_order")
 def test_trade_endpoint_delegates_to_trading_service(mock_execute_trade, client):
     """Integration check for request parsing and service delegation."""
     user_id = "85a3a49f-e498-44f4-974f-7f4cb2d60a40"
