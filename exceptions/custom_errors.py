@@ -98,3 +98,11 @@ class InvalidCredentialsError(QuantumFlowException):
 class AuthenticationFailedError(QuantumFlowException):
     def __init__(self, detail: str = "Could not validate credentials"):
         super().__init__(message=detail, status_code=status.HTTP_401_UNAUTHORIZED)
+
+
+class SecurityConfigurationError(QuantumFlowException):
+    def __init__(self, detail: str):
+        super().__init__(
+            message=detail,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

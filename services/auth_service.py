@@ -3,7 +3,7 @@ from passlib.context import CryptContext
 from sqlalchemy import or_
 
 from db.models import User, Wallet
-from exceptions.custom_errors import QuantumFlowException
+from exceptions.custom_errors import QuantumFlowException, InvalidCredentialsError
 
 # Configure bcrypt as the hashing algorithm
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -74,3 +74,20 @@ def register_new_user(username: str, email: str, password: str, db: Session) -> 
     except Exception as e:
         db.rollback()
         raise e
+
+
+def authenticate_user(login_identifier: str, password: str, db: Session):
+    """Validates user credentials against the database."""
+    user = (
+        db.query(User)
+        .filter(or_(User.email == login_identifier, User.username == login_identifier))
+        .first()
+    )
+
+    if not user:
+        raise InvalidCredentialsError()
+
+    if not verify_password(password, user.password):
+        raise InvalidCredentialsError()
+
+    return user
