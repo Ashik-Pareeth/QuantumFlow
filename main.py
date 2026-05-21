@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from api import data, ml, trading, portfolio, gamification
+from api import data, ml, trading, portfolio, gamification, auth
 import os
 
 from fastapi.exceptions import RequestValidationError
@@ -33,6 +33,7 @@ app.include_router(
 app.include_router(
     gamification.router, prefix="/api/v1/game", tags=["Gamification & Leaderboard"]
 )
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication & Users"])
 
 
 @app.get("/health")

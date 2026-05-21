@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from uuid import UUID
 from decimal import Decimal
 from datetime import datetime
@@ -17,3 +17,16 @@ class GameRoundCreate(BaseModel):
     )
     start_at: datetime
     end_at: datetime
+
+
+class UserRegisterRequest(BaseModel):
+    username: str = Field(
+        ...,
+        min_length=3,
+        max_length=20,
+        description="Public display name for the leaderboard",
+    )
+    email: EmailStr
+    password: str = Field(
+        ..., min_length=8, description="Password must be at least 8 characters"
+    )
