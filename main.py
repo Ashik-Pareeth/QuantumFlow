@@ -30,7 +30,9 @@ app.include_router(trading.router, prefix="/api/v1/trade", tags=["Trading Execut
 app.include_router(
     portfolio.router, prefix="/api/v1/portfolio", tags=["User Portfolio"]
 )
-app.include_router(gamification.router, prefix="/api/v1/gamification")
+app.include_router(
+    gamification.router, prefix="/api/v1/game", tags=["Gamification & Leaderboard"]
+)
 
 
 @app.get("/health")
