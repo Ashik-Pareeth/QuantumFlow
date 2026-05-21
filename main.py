@@ -1,10 +1,10 @@
 from fastapi import FastAPI
-from api import data, ml, trading, portfolio, gamification, auth
-import os
+from api.routers import auth, data, gamification, ml, portfolio, trading
 
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from core.config import settings
 from exceptions.custom_errors import QuantumFlowException
 from exceptions.handlers import (
     custom_domain_exception_handler,
@@ -44,7 +44,4 @@ def health_check():
 if __name__ == "__main__":
     import uvicorn
 
-    API_HOST = os.getenv("API_HOST")
-    API_PORT = int(os.getenv("API_PORT"))
-
-    uvicorn.run("main:app", host=API_HOST, port=API_PORT, reload=True)
+    uvicorn.run("main:app", host=settings.api_host, port=settings.api_port, reload=True)

@@ -1,9 +1,11 @@
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
-from sqlalchemy import or_
+from jose import JWTError, jwt
 
-from db.models import User, Wallet
+from core.security import ALGORITHM, SECRET_KEY
 from exceptions.custom_errors import QuantumFlowException, InvalidCredentialsError
+from exceptions.custom_errors import AuthenticationFailedError
+from repositories import user_repository, wallet_repository
 
 # Configure bcrypt as the hashing algorithm
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -22,12 +24,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def register_new_user(username: str, email: str, password: str, db: Session) -> dict:
     """Registers a user, hashes their password, and seeds their initial wallet."""
 
-    # 1. Check if user already exists
-
-    existing_user = (
-        db.query(User)
-        .filter(or_(User.email == email, User.username == username))
-        .first()
+    existing_user = user_repository.get_by_email_or_username_pair(
+        db, email=email, username=username
     )
 
     if existing_user:
@@ -41,20 +39,15 @@ def register_new_user(username: str, email: str, password: str, db: Session) -> 
             )
 
     try:
-        # 2. Create the User with a securely hashed password
         hashed_password = get_password_hash(password)
-        new_user = User(username=username, email=email, password=hashed_password)
-        db.add(new_user)
+        new_user = user_repository.create(
+            db, username=username, email=email, password_hash=hashed_password
+        )
 
-        # db.flush() pushes the insert to Postgres without fully committing it.
-        # This allows Postgres to generate the UUID, which we need for the Wallet.
         db.flush()
 
-        # 3. Auto-Create the Gamified Wallet
-        new_wallet = Wallet(user_id=new_user.id, cash_balance=10000.00)
-        db.add(new_wallet)
+        wallet_repository.create(db, user_id=new_user.id, cash_balance=10000.00)
 
-        # 4. Commit the entire transaction atomically
         db.commit()
 
         return {
@@ -78,16 +71,30 @@ def register_new_user(username: str, email: str, password: str, db: Session) -> 
 
 def authenticate_user(login_identifier: str, password: str, db: Session):
     """Validates user credentials against the database."""
-    user = (
-        db.query(User)
-        .filter(or_(User.email == login_identifier, User.username == login_identifier))
-        .first()
-    )
+    user = user_repository.get_by_email_or_username(db, login_identifier)
 
     if not user:
         raise InvalidCredentialsError()
 
     if not verify_password(password, user.password):
         raise InvalidCredentialsError()
+
+    return user
+
+
+def get_user_from_access_token(token: str, db: Session):
+    """Validates an access token and returns the authenticated user."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise AuthenticationFailedError(detail="Token payload invalid.")
+
+    except JWTError:
+        raise AuthenticationFailedError(detail="Could not validate credentials.")
+
+    user = user_repository.get_by_id(db, user_id)
+    if user is None:
+        raise AuthenticationFailedError(detail="User no longer exists.")
 
     return user

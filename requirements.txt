@@ -5,6 +5,8 @@ psycopg2-binary
 yfinance
 pandas
 pydantic
+pydantic-settings
+email-validator
 pandas-ta
 xgboost
 scikit-learn
@@ -17,3 +19,4 @@ pytest
 httpx
 passlib[bcrypt] 
 python-jose[cryptography]
+python-multipart

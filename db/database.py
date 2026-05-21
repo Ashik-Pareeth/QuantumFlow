@@ -1,19 +1,4 @@
-import os
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from core.database import SessionLocal, engine
+from db.session import get_db
 
-SQLALCHEMY_DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/quantumflow_fallback"
-)
-
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-
-    finally:
-        db.close()
+__all__ = ["SessionLocal", "engine", "get_db"]

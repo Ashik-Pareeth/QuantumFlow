@@ -4,12 +4,13 @@ import joblib
 from sqlalchemy.orm import Session
 
 from core.cache import get_cached_signal, set_cached_signal
+from core.config import settings
 from exceptions.custom_errors import ModelNotTrainedError, QuantumFlowException
 from services.feature_engineering import generate_features
 from services.ml_engine import train_ensemble_model
 from services.regime_detection import detect_current_regime, train_regime_model
 
-MODEL_DIR = "models/"
+MODEL_DIR = settings.model_dir
 
 
 def train_models_for_symbol(symbol: str, limit: int, db: Session) -> dict:

@@ -1,18 +1,17 @@
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
 from decimal import Decimal
 
-from db.models import (
-    GameRound,
-    RoundStatus,
-    Leaderboard,
-    Wallet,
-    Position,
-    Candle,
-    User,
-)
+from db.models import RoundStatus
+from domain.pnl import quantize_money
 from exceptions.custom_errors import QuantumFlowException
+from repositories import (
+    candle_repository,
+    gamification_repository,
+    position_repository,
+    user_repository,
+    wallet_repository,
+)
 
 
 def create_game_round(
@@ -23,10 +22,13 @@ def create_game_round(
     if start_at >= end_at:
         raise QuantumFlowException("start_at must be before end_at", status_code=400)
 
-    new_round = GameRound(
-        name=name, start_at=start_at, end_at=end_at, status=RoundStatus.UPCOMING
+    new_round = gamification_repository.create_round(
+        db,
+        name=name,
+        start_at=start_at,
+        end_at=end_at,
+        status=RoundStatus.UPCOMING,
     )
-    db.add(new_round)
     db.commit()
 
     return {
@@ -38,7 +40,7 @@ def create_game_round(
 
 def get_all_rounds(db: Session) -> list[dict]:
     """Retrieves all historical and active game rounds."""
-    rounds = db.query(GameRound).order_by(desc(GameRound.created_at)).all()
+    rounds = gamification_repository.list_rounds(db)
     return [
         {
             "id": str(r.id),
@@ -55,31 +57,19 @@ def calculate_live_leaderboard(db: Session) -> list[dict]:
     """Calculates live PnL for all users and updates the current round standings."""
 
     # 1. Find the currently active round
-    active_round = (
-        db.query(GameRound).filter(GameRound.status == RoundStatus.ACTIVE).first()
-    )
+    active_round = gamification_repository.get_active_round(db)
     if not active_round:
         raise QuantumFlowException(
             "No active game round is currently running.", status_code=404
         )
 
     # 2. Bulk Fetch: Get the absolute latest price for EVERY traded symbol in one query
-    active_symbols = [row[0] for row in db.query(Position.symbol).distinct().all()]
-    latest_prices = {}
-
-    if active_symbols:
-        candles = (
-            db.query(Candle)
-            .filter(Candle.symbol.in_(active_symbols))
-            .distinct(Candle.symbol)
-            .order_by(Candle.symbol, Candle.time.desc())
-            .all()
-        )
-        latest_prices = {c.symbol: c.close for c in candles}
+    active_symbols = position_repository.list_distinct_symbols(db)
+    latest_prices = candle_repository.get_latest_prices_by_symbols(db, active_symbols)
 
     # 3. Calculate Portfolio Value per user in-memory (O(N) complexity)
-    wallets = db.query(Wallet).all()
-    positions = db.query(Position).all()
+    wallets = wallet_repository.list_all(db)
+    positions = position_repository.list_all(db)
 
     # Map positions to users for fast lookup
     user_positions = {}
@@ -99,7 +89,7 @@ def calculate_live_leaderboard(db: Session) -> list[dict]:
         total_value = wallet.cash_balance + invested_value
 
         # In a real app, we would join the User table to get their display name
-        user = db.query(User).filter(User.id == wallet.user_id).first()
+        user = user_repository.get_by_id(db, wallet.user_id)
         email = user.email if user else "Unknown"
 
         rankings.append(
@@ -116,23 +106,18 @@ def calculate_live_leaderboard(db: Session) -> list[dict]:
     # 5. Upsert rankings into the Leaderboard table
     final_output = []
     for rank_index, data in enumerate(rankings, start=1):
-        board_entry = (
-            db.query(Leaderboard)
-            .filter(
-                Leaderboard.round_id == active_round.id,
-                Leaderboard.user_id == data["user_id"],
-            )
-            .first()
+        board_entry = gamification_repository.get_leaderboard_entry(
+            db, round_id=active_round.id, user_id=data["user_id"]
         )
 
         if not board_entry:
-            board_entry = Leaderboard(
+            gamification_repository.create_leaderboard_entry(
+                db,
                 round_id=active_round.id,
                 user_id=data["user_id"],
                 portfolio_value=data["portfolio_value"],
                 rank=rank_index,
             )
-            db.add(board_entry)
         else:
             board_entry.portfolio_value = data["portfolio_value"]
             board_entry.rank = rank_index
@@ -141,9 +126,7 @@ def calculate_live_leaderboard(db: Session) -> list[dict]:
             {
                 "rank": rank_index,
                 "email": data["email"],
-                "portfolio_value": str(
-                    data["portfolio_value"].quantize(Decimal("0.00"))
-                ),
+                "portfolio_value": str(quantize_money(data["portfolio_value"])),
             }
         )
 

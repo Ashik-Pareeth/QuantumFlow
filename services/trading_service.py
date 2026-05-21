@@ -1,9 +1,18 @@
 from uuid import UUID
 from sqlalchemy.orm import Session
 from fastapi import status
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 
-from db.models import Candle, Position, Trade, TradeSide, Wallet
+from db.models import TradeSide
+from domain.liquidation import exceeds_position_limit
+from domain.pnl import (
+    FOUR_PLACES,
+    calculate_realized_pnl,
+    calculate_trade_value,
+    quantize_price,
+    quantize_quantity,
+)
+from domain.pricing import calculate_invested_value
 from services.feature_engineering import generate_features
 from services.regime_detection import detect_current_regime
 from exceptions.custom_errors import (
@@ -11,6 +20,12 @@ from exceptions.custom_errors import (
     QuantumFlowException,
     RiskGateBlockedError,
     InsufficientPositionError,
+)
+from repositories import (
+    candle_repository,
+    position_repository,
+    trade_repository,
+    wallet_repository,
 )
 
 
@@ -25,19 +40,14 @@ def execute_trade_order(
     """Core business logic for executing a trade. Independent of HTTP."""
 
     # 1. RISK GATE & PRICING
-    latest_candle = (
-        db.query(Candle)
-        .filter(Candle.symbol == symbol)
-        .order_by(Candle.time.desc())
-        .first()
-    )
+    latest_candle = candle_repository.get_latest_for_symbol(db, symbol)
     if not latest_candle:
         raise QuantumFlowException(
             message=f"No pricing data available for {symbol}", status_code=404
         )
 
     execution_price = latest_candle.close
-    trade_value = qty * execution_price
+    trade_value = calculate_trade_value(qty, execution_price)
 
     current_state = None
     if side == TradeSide.BUY:
@@ -56,24 +66,15 @@ def execute_trade_order(
 
     # 2. VIRTUAL ECONOMY EXECUTION
     try:
-        wallet = (
-            db.query(Wallet).filter(Wallet.user_id == user_id).with_for_update().first()
-        )
+        wallet = wallet_repository.get_by_user_id(db, user_id, for_update=True)
         if not wallet:
             raise QuantumFlowException(message="Wallet not found.", status_code=404)
 
-        position = (
-            db.query(Position)
-            .filter(Position.user_id == user_id, Position.symbol == symbol)
-            .with_for_update()
-            .first()
+        position = position_repository.get_by_user_and_symbol(
+            db, user_id, symbol, for_update=True
         )
 
         realized_pnl = Decimal("0.00")
-
-        # Decimal quantization context (matches Database Numeric(10, 4))
-        FOUR_PLACES = Decimal("0.0000")
-        TWO_PLACES = Decimal("0.00")
 
         if side == TradeSide.BUY:
             if wallet.cash_balance < trade_value:
@@ -81,36 +82,24 @@ def execute_trade_order(
                     message="Insufficient funds.", status_code=400
                 )
 
-            # Fix #1: Mark-to-Market Portfolio Calculation
-            all_positions = db.query(Position).filter(Position.user_id == user_id).all()
+            all_positions = position_repository.list_for_user(db, user_id)
 
-            # Fetch latest prices for all owned symbols in one bulk query
             owned_symbols = [p.symbol for p in all_positions]
-            # (In production,
-            #  this should ideally be an indexed TimescaleDB continuous aggregate)
-            latest_prices = {
-                c.symbol: c.close
-                for c in db.query(Candle)
-                .filter(Candle.symbol.in_(owned_symbols))
-                .distinct(Candle.symbol)  # PostgreSQL specific for latest row per group
-                .order_by(Candle.symbol, Candle.time.desc())
-                .all()
-            }
-
-            # Use current market price if available, fallback to avg_cost if missing
-            invested_value = sum(
-                (p.qty * latest_prices.get(p.symbol, p.avg_price))
-                for p in all_positions
+            latest_prices = candle_repository.get_latest_prices_by_symbols(
+                db, owned_symbols
             )
+
+            invested_value = calculate_invested_value(all_positions, latest_prices)
             estimated_portfolio = wallet.cash_balance + invested_value
 
-            # Exposure is based on the execution price we are getting RIGHT NOW
             current_exposure = (
                 (position.qty * execution_price) if position else Decimal("0.00")
             )
 
-            if (current_exposure + trade_value) > (
-                estimated_portfolio * Decimal("0.20")
+            if exceeds_position_limit(
+                current_exposure=current_exposure,
+                trade_value=trade_value,
+                estimated_portfolio_value=estimated_portfolio,
             ):
                 raise QuantumFlowException(
                     message="Position limit exceeded."
@@ -125,52 +114,43 @@ def execute_trade_order(
                 new_total_qty = position.qty + qty
                 raw_avg_price = (total_historical_cost + trade_value) / new_total_qty
 
-                # Fix #2: Quantize to prevent Postgres DataError
-                position.avg_price = raw_avg_price.quantize(
-                    FOUR_PLACES, rounding=ROUND_HALF_UP
-                )
-                position.qty = new_total_qty.quantize(FOUR_PLACES)
+                position.avg_price = quantize_price(raw_avg_price)
+                position.qty = quantize_quantity(new_total_qty)
             else:
-                new_position = Position(
+                position_repository.create(
+                    db,
                     user_id=user_id,
                     symbol=symbol,
-                    qty=qty.quantize(FOUR_PLACES),
-                    avg_price=execution_price.quantize(FOUR_PLACES),
+                    qty=quantize_quantity(qty),
+                    avg_price=quantize_price(execution_price),
                 )
-                db.add(new_position)
 
         elif side == TradeSide.SELL:
             if not position or position.qty < qty:
                 raise InsufficientPositionError(symbol=symbol)
 
-            # Fix #3: Full-Close Precision Drift
             if position.qty == qty:
-                # If closing 100%,
-                # cost basis is exactly whatever historical value was left
                 cost_basis = position.qty * position.avg_price
             else:
                 cost_basis = qty * position.avg_price
 
-            realized_pnl = (trade_value - cost_basis).quantize(
-                TWO_PLACES, rounding=ROUND_HALF_UP
-            )
+            realized_pnl = calculate_realized_pnl(trade_value, cost_basis)
 
             wallet.cash_balance += trade_value
             position.qty -= qty
 
             if position.qty == Decimal("0.0000"):
-                db.delete(position)
+                position_repository.delete(db, position)
 
-        # Log the Immutable Trade
-        new_trade = Trade(
+        trade_repository.create(
+            db,
             user_id=user_id,
             symbol=symbol,
             side=side,
             qty=qty.quantize(FOUR_PLACES),
-            price=execution_price.quantize(FOUR_PLACES),
+            price=quantize_price(execution_price),
             pnl=realized_pnl,
         )
-        db.add(new_trade)
 
         db.commit()
 

@@ -1,6 +1,8 @@
 import yfinance as yf
 from sqlalchemy.orm import Session
+
 from db.models import Candle
+from repositories import candle_repository
 
 
 def fetch_and_store_candles(symbol: str, db: Session, period: str = "1y"):
@@ -28,11 +30,7 @@ def fetch_and_store_candles(symbol: str, db: Session, period: str = "1y"):
         )
         candles.append(candle)
 
-    # Idempotency: Delete existing data for this symbol so we don't get duplicate errors
-    db.query(Candle).filter(Candle.symbol == symbol.upper()).delete()
-
-    # Bulk insert the new data
-    db.add_all(candles)
+    candle_repository.replace_for_symbol(db, symbol, candles)
     db.commit()
 
     return len(candles)

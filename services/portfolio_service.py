@@ -1,36 +1,24 @@
 from uuid import UUID
 from decimal import Decimal
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
 
-from db.models import Wallet, Position, Trade, Candle
+from domain.pnl import calculate_unrealized_pnl_pct, quantize_money
 from exceptions.custom_errors import QuantumFlowException
+from repositories import candle_repository, position_repository, trade_repository, wallet_repository
 
 
 def get_user_portfolio_summary(user_id: UUID, db: Session) -> dict:
     """Fetches cash balance, open positions, and calculates live portfolio value."""
 
-    wallet = db.query(Wallet).filter(Wallet.user_id == user_id).first()
+    wallet = wallet_repository.get_by_user_id(db, user_id)
     if not wallet:
         raise QuantumFlowException(message="User wallet not found.", status_code=404)
 
-    positions = db.query(Position).filter(Position.user_id == user_id).all()
+    positions = position_repository.list_for_user(db, user_id)
 
-    # 1. Fetch latest prices for Mark-to-Market calculation
     owned_symbols = [p.symbol for p in positions]
-    latest_prices = {}
+    latest_prices = candle_repository.get_latest_prices_by_symbols(db, owned_symbols)
 
-    if owned_symbols:
-        latest_candles = (
-            db.query(Candle)
-            .filter(Candle.symbol.in_(owned_symbols))
-            .distinct(Candle.symbol)
-            .order_by(Candle.symbol, Candle.time.desc())
-            .all()
-        )
-        latest_prices = {c.symbol: c.close for c in latest_candles}
-
-    # 2. Format positions and calculate total invested value
     formatted_positions = []
     total_invested_value = Decimal("0.00")
 
@@ -39,12 +27,7 @@ def get_user_portfolio_summary(user_id: UUID, db: Session) -> dict:
         current_value = p.qty * current_price
         total_invested_value += current_value
 
-        # Calculate unrealized PnL percentage for the frontend UI
-        pnl_pct = (
-            ((current_price - p.avg_price) / p.avg_price) * 100
-            if p.avg_price > 0
-            else Decimal("0")
-        )
+        pnl_pct = calculate_unrealized_pnl_pct(current_price, p.avg_price)
 
         formatted_positions.append(
             {
@@ -52,8 +35,8 @@ def get_user_portfolio_summary(user_id: UUID, db: Session) -> dict:
                 "shares": str(p.qty),
                 "average_cost": str(p.avg_price),
                 "current_price": str(current_price),
-                "current_value": str(current_value.quantize(Decimal("0.00"))),
-                "unrealized_pnl_pct": str(pnl_pct.quantize(Decimal("0.00"))),
+                "current_value": str(quantize_money(current_value)),
+                "unrealized_pnl_pct": str(pnl_pct),
             }
         )
 
@@ -61,7 +44,7 @@ def get_user_portfolio_summary(user_id: UUID, db: Session) -> dict:
 
     return {
         "cash_balance": str(wallet.cash_balance),
-        "total_portfolio_value": str(total_portfolio_value.quantize(Decimal("0.00"))),
+        "total_portfolio_value": str(quantize_money(total_portfolio_value)),
         "open_positions": formatted_positions,
     }
 
@@ -69,13 +52,7 @@ def get_user_portfolio_summary(user_id: UUID, db: Session) -> dict:
 def get_user_trade_history(user_id: UUID, limit: int, db: Session) -> list[dict]:
     """Fetches the immutable ledger of trades for the user."""
 
-    trades = (
-        db.query(Trade)
-        .filter(Trade.user_id == user_id)
-        .order_by(desc(Trade.created_at))
-        .limit(limit)
-        .all()
-    )
+    trades = trade_repository.list_for_user(db, user_id, limit)
 
     return [
         {

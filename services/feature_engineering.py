@@ -1,22 +1,14 @@
 import pandas as pd
 import pandas_ta as ta
 from sqlalchemy.orm import Session
-from db.models import Candle
+
+from repositories import candle_repository
 
 
 def generate_features(symbol: str, db: Session, limit: int = 500):
     print(f"Engineering features for {symbol}...")
 
-    # 1. Fetch raw data from TimescaleDB
-    # We fetch ascending (oldest first) because moving averages must be calculated
-    # chronologically
-    candles = (
-        db.query(Candle)
-        .filter(Candle.symbol == symbol.upper())
-        .order_by(Candle.time.asc())
-        .limit(limit)
-        .all()
-    )
+    candles = candle_repository.get_chronological_for_symbol(db, symbol, limit)
 
     if not candles:
         return None

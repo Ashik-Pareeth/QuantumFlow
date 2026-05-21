@@ -1,26 +1,22 @@
 import json
 import redis
 from core.logger import get_logger
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
+from core.config import settings
 
 logger = get_logger(__name__)
 
 
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-CACHE_TTL = int(os.getenv("CACHE_TTL_SECONDS", "60"))
-
 # Connect to the Dockerized Redis container
 # decode_responses=True ensures we get clean strings back instead of raw bytes
 redis_client = redis.Redis(
-    host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True
+    host=settings.redis_host,
+    port=settings.redis_port,
+    db=0,
+    decode_responses=True,
 )
 
 
-CACHE_TTL = 60  # Cache lives for 60 seconds
+CACHE_TTL = settings.cache_ttl_seconds
 HIGH_DEMAND_SYMBOLS = {"AAPL", "NVDA", "TSLA", "SPY", "QQQ", "BTC"}
 
 
@@ -43,7 +39,7 @@ def set_cached_signal(symbol: str, payload: dict):
     symbol_upper = symbol.upper()
 
     if symbol_upper not in HIGH_DEMAND_SYMBOLS:
-        logger.info(f"⏭CACHE BYPASS: {symbol_upper} is low demand. Skipping Redis.")
+        logger.info(f"CACHE BYPASS: {symbol_upper} is low demand. Skipping Redis.")
         return  # Exit the function without saving to memory
 
     try:

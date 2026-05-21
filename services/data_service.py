@@ -1,9 +1,9 @@
 from sqlalchemy.orm import Session
 
-from db.models import Candle
 from exceptions.custom_errors import QuantumFlowException
 from services.feature_engineering import generate_features
 from services.market_data import fetch_and_store_candles
+from repositories import candle_repository
 
 
 def ingest_market_data(symbol: str, period: str, db: Session) -> dict:
@@ -21,15 +21,9 @@ def ingest_market_data(symbol: str, period: str, db: Session) -> dict:
     }
 
 
-def get_recent_candles(symbol: str, limit: int, db: Session) -> list[Candle]:
+def get_recent_candles(symbol: str, limit: int, db: Session):
     """Retrieve the most recent candles for a symbol."""
-    return (
-        db.query(Candle)
-        .filter(Candle.symbol == symbol.upper())
-        .order_by(Candle.time.desc())
-        .limit(limit)
-        .all()
-    )
+    return candle_repository.get_recent_for_symbol(db, symbol, limit)
 
 
 def get_technical_features(symbol: str, limit: int, db: Session) -> list[dict]:
