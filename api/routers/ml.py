@@ -14,6 +14,8 @@ def train_model(symbol: str, limit: int = 1000, db: Session = Depends(get_db)):
 
 
 @router.get("/predict/{symbol}")
-def get_live_signal(symbol: str, db: Session = Depends(get_db)):
+def get_live_signal(
+    symbol: str, force_execution: bool = False, db: Session = Depends(get_db)
+):
     """Generates a live trading signal."""
-    return generate_live_signal(symbol=symbol, db=db)
+    return generate_live_signal(symbol=symbol, db=db, force_execution=force_execution)

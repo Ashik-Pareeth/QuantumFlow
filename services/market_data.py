@@ -1,7 +1,6 @@
 import yfinance as yf
 from sqlalchemy.orm import Session
 
-from db.models import Candle
 from repositories import candle_repository
 
 
