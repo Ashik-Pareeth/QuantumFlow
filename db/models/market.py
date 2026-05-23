@@ -11,8 +11,9 @@ class Candle(Base):
 
     __tablename__ = "candles"
 
-    time = Column(DateTime, primary_key=True, nullable=False, index=True)
+    time = Column(DateTime(timezone=True), primary_key=True, nullable=False)
     symbol = Column(String, primary_key=True, nullable=False, index=True)
+    timeframe = Column(String, primary_key=True, nullable=False)
     open = Column(Numeric(10, 4), nullable=False)
     high = Column(Numeric(10, 4), nullable=False)
     low = Column(Numeric(10, 4), nullable=False)

@@ -5,32 +5,40 @@ from db.models import Candle
 from repositories import candle_repository
 
 
-def fetch_and_store_candles(symbol: str, db: Session, period: str = "1y"):
+def fetch_and_store_candles(
+    symbol: str, db: Session, period: str = "1y", interval: str = "1d"
+):
     print(f"Fetching market data for {symbol}...")
     stock = yf.Ticker(symbol)
-    df = stock.history(period=period)
+    df = stock.history(period=period, interval=interval)
 
     if df.empty:
         return 0
 
-    # Strip timezone info to keep PostgreSQL timestamps clean
-    df.index = df.index.tz_localize(None)
+    # Standardize Timezone (The fix we just applied)
+    if df.index.tz is None:
+        df.index = df.index.tz_localize("UTC")
+    else:
+        df.index = df.index.tz_convert("UTC")
 
-    candles = []
-    # Iterate through the Pandas DataFrame and build SQLAlchemy objects
+    # Drop duplicate timestamps, keeping the most recent data
+    df = df[~df.index.duplicated(keep="last")]
+
+    records = []
     for index, row in df.iterrows():
-        candle = Candle(
-            time=index,
-            symbol=symbol.upper(),
-            open=float(row["Open"]),
-            high=float(row["High"]),
-            low=float(row["Low"]),
-            close=float(row["Close"]),
-            volume=int(row["Volume"]),
+        records.append(
+            {
+                "time": index,
+                "symbol": symbol.upper(),
+                "timeframe": interval,
+                "open": float(row["Open"]),
+                "high": float(row["High"]),
+                "low": float(row["Low"]),
+                "close": float(row["Close"]),
+                "volume": int(row["Volume"]),
+            }
         )
-        candles.append(candle)
 
-    candle_repository.replace_for_symbol(db, symbol, candles)
-    db.commit()
+        candle_repository.upsert_candles(db, records)
 
-    return len(candles)
+        return len(records)
