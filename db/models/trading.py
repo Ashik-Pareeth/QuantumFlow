@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, Enum, ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -22,9 +22,14 @@ class Position(Base):
     symbol = Column(String, primary_key=True, index=True)
     qty = Column(Numeric(12, 4), default=0, nullable=False)
     avg_price = Column(Numeric(10, 4), default=0.0000, nullable=False)
-    opened_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    opened_at = Column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
     user = relationship("User", back_populates="positions")

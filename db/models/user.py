@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -29,7 +29,10 @@ class Wallet(Base):
     )
     cash_balance = Column(Numeric(12, 2), default=10000.00, nullable=False)
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
     user = relationship("User", back_populates="wallet")

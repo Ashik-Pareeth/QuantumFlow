@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -40,7 +40,10 @@ class Leaderboard(Base):
     rank = Column(Integer, nullable=True)
     xp = Column(Integer, default=0, nullable=False)
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
     user = relationship("User", back_populates="leaderboard_entries")
