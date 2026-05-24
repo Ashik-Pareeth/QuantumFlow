@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from api.schemas.user import UserRegisterRequest
+from core.rate_limiter import limiter
 from core.security import create_access_token
 from db.database import get_db
 from services.auth_service import authenticate_user, register_new_user
@@ -11,16 +12,27 @@ router = APIRouter()
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-def register(request: UserRegisterRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(
+    request: Request,
+    payload: UserRegisterRequest,
+    db: Session = Depends(get_db),
+):
     """Registers a new user and seeds their gamified wallet."""
     return register_new_user(
-        username=request.username, email=request.email, password=request.password, db=db
+        username=payload.username,
+        email=payload.email,
+        password=payload.password,
+        db=db,
     )
 
 
 @router.post("/login")
+@limiter.limit("10/minute")
 def login(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
 ):
     """Authenticates a user via email OR username and returns a JWT access token."""
     user = authenticate_user(

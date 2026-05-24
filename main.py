@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from slowapi.errors import RateLimitExceeded
 from slowapi.extension import _rate_limit_exceeded_handler
 from api.routers import auth, data, gamification, ml, portfolio, trading
@@ -43,7 +43,8 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication & U
 
 
 @app.get("/health")
-def health_check():
+@limiter.limit("120/minute")
+def health_check(request: Request):
     return {"status": "QuantumFlow Monolith is operational", "phase": 1}
 
 
