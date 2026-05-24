@@ -1,9 +1,12 @@
 from fastapi import FastAPI
+from slowapi.errors import RateLimitExceeded
+from slowapi.extension import _rate_limit_exceeded_handler
 from api.routers import auth, data, gamification, ml, portfolio, trading
 
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from core.rate_limiter import limiter
 from core.config import settings
 from exceptions.custom_errors import QuantumFlowException
 from exceptions.handlers import (
@@ -18,6 +21,9 @@ app = FastAPI(
     description="Real-time market intelligence monolith",
     version="1.0.0",
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_exception_handler(QuantumFlowException, custom_domain_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
