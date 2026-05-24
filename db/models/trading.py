@@ -32,6 +32,8 @@ class Position(Base):
         nullable=False,
     )
 
+    idempotency_key = Column(String, unique=True, index=True, nullable=False)
+
     user = relationship("User", back_populates="positions")
 
 

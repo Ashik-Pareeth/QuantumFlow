@@ -1,6 +1,6 @@
 try:
     from pydantic_settings import BaseSettings, SettingsConfigDict
-    from pydantic import Field, SecretStr
+    from pydantic import Field, SecretStr, PostgresDsn
 except ImportError:  # Pydantic v1 compatibility
     from pydantic.v1 import BaseSettings, Field, SecretStr
 
@@ -8,7 +8,7 @@ except ImportError:  # Pydantic v1 compatibility
 
 
 class Settings(BaseSettings):
-    database_url: str = Field(...)
+    database_url: PostgresDsn = Field(...)
     redis_host: str = Field(default="localhost")
     redis_port: int = Field(default=6379)
     cache_ttl_seconds: int = Field(default=60)

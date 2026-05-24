@@ -15,9 +15,10 @@ class TradeRequest(BaseModel):
     notional_value: Optional[Decimal] = Field(
         default=None, gt=0, description="Amount in USD to spend/receive"
     )
-
     force_execution: bool = False
-    idempotency_key: Optional[str] = None
+    idempotency_key: Optional[str] = Field(
+        default=None, description="Unique UUID to prevent double-charging"
+    )
 
     @model_validator(mode="after")
     def check_exclusive_fields(self):
