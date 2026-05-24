@@ -32,8 +32,6 @@ class Position(Base):
         nullable=False,
     )
 
-    idempotency_key = Column(String, unique=True, index=True, nullable=False)
-
     user = relationship("User", back_populates="positions")
 
 
@@ -48,5 +46,7 @@ class Trade(QuantumFlowEntity):
     qty = Column(Numeric(12, 4), nullable=False)
     price = Column(Numeric(10, 4), nullable=False)
     pnl = Column(Numeric(12, 2), default=0.00, nullable=False)
+
+    idempotency_key = Column(String, unique=True, index=True, nullable=False)
 
     user = relationship("User", back_populates="trades")
