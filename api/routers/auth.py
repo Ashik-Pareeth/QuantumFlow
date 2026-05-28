@@ -10,7 +10,11 @@ from services.auth_service import authenticate_user, register_new_user
 router = APIRouter()
 
 
-@router.post("/register", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserRegisterResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 @limiter.limit("5/minute")
 def register(
     request: Request,
@@ -26,9 +30,7 @@ def register(
     )
 
 
-@router.post(
-    "/login", response_model=UserRegisterResponse, status_code=status.HTTP_200_OK
-)
+@router.post("/login", status_code=status.HTTP_200_OK)
 @limiter.limit("10/minute")
 def login(
     request: Request,
@@ -37,6 +39,6 @@ def login(
 ):
     """Authenticates a user via email OR username and returns a JWT access token."""
     user = authenticate_user(
-        email_or_username=form_data.username, password=form_data.password, db=db
+        login_identifier=form_data.username, password=form_data.password, db=db
     )
     return user

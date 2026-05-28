@@ -8,7 +8,10 @@ from db.models import TradeSide
 
 class TradeRequest(BaseModel):
     symbol: str
-    side: str
+
+    # 2. Apply the Enum to the side field
+    side: TradeSide
+
     qty: Optional[Decimal] = Field(
         default=None, gt=0, description="Number of shares to trade"
     )
