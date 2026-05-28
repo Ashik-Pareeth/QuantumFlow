@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
-from api.deps import get_current_user
+from api.dependencies import get_current_active_user
 from api.schemas.trading import LegacyTradeRequest, SellTradeRequest, TradeRequest
 from core.rate_limiter import limiter
 from db.database import get_db
@@ -18,7 +18,7 @@ def place_buy_order(
     request: Request,
     payload: TradeRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Executes a BUY order against the user's paper wallet."""
     return execute_trade_order(

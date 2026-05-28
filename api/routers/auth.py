@@ -2,9 +2,8 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
-from api.schemas.user import UserRegisterRequest
+from api.schemas.user import UserRegisterRequest, UserRegisterResponse
 from core.rate_limiter import limiter
-from core.security import create_access_token
 from db.database import get_db
 from services.auth_service import authenticate_user, register_new_user
 
@@ -27,7 +26,9 @@ def register(
     )
 
 
-@router.post("/login")
+@router.post(
+    "/login", response_model=UserRegisterResponse, status_code=status.HTTP_200_OK
+)
 @limiter.limit("10/minute")
 def login(
     request: Request,
@@ -36,12 +37,6 @@ def login(
 ):
     """Authenticates a user via email OR username and returns a JWT access token."""
     user = authenticate_user(
-        login_identifier=form_data.username, password=form_data.password, db=db
+        email_or_username=form_data.username, password=form_data.password, db=db
     )
-    access_token = create_access_token(data={"sub": str(user.id)})
-
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": {"id": str(user.id), "username": user.username, "email": user.email},
-    }
+    return user

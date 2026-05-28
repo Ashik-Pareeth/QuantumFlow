@@ -16,7 +16,9 @@ def get_by_email_or_username(db: Session, identifier: str) -> User | None:
     )
 
 
-def get_by_email_or_username_pair(db: Session, *, email: str, username: str) -> User | None:
+def get_by_email_or_username_pair(
+    db: Session, *, email: str, username: str
+) -> User | None:
     return (
         db.query(User)
         .filter(or_(User.email == email, User.username == username))

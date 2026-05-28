@@ -1,4 +1,10 @@
 from api.routers.data import router
-from services.data_service import get_recent_candles, get_technical_features, ingest_market_data
+from services.data_service import get_recent_candles, get_technical_features
+from services.data_service import ingest_market_data
 
-__all__ = ["get_recent_candles", "get_technical_features", "ingest_market_data", "router"]
+__all__ = [
+    "get_recent_candles",
+    "get_technical_features",
+    "ingest_market_data",
+    "router",
+]
