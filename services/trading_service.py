@@ -3,6 +3,7 @@ from uuid import UUID
 from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
+from datetime import datetime, timezone, timedelta
 
 from db.models import TradeSide
 from domain.liquidation import exceeds_position_limit
@@ -13,6 +14,7 @@ from domain.pnl import (
     quantize_quantity,
 )
 from services.feature_engineering import generate_features
+from services.market_data import fetch_and_store_candles
 from services.regime_detection import detect_current_regime
 from services.portfolio_service import get_total_portfolio_value
 from exceptions.custom_errors import (
@@ -54,10 +56,24 @@ def execute_trade_order(
 
     # 1. PRICING FETCH & ALGEBRAIC SOLVER
     latest_candle = candle_repository.get_latest_for_symbol(db, symbol)
+
+    needs_hydration = False
     if not latest_candle:
-        raise QuantumFlowException(
-            message=f"No pricing data available for {symbol}", status_code=404
-        )
+        needs_hydration = True
+    else:
+        if datetime.now(timezone.utc) - latest_candle.time > timedelta(minutes=120):
+            needs_hydration = True
+
+    if needs_hydration:
+        try:
+            fetch_and_store_candles(symbol, db)
+            latest_candle = candle_repository.get_latest_for_symbol(db, symbol)
+            if not latest_candle:
+                raise InsufficientDataError()
+        except Exception as e:
+            raise QuantumFlowException(
+                f"Failed to fetch market data for {symbol}. Try again later."
+            ) from e
 
     execution_price = Decimal(str(latest_candle.close))
 
@@ -72,18 +88,19 @@ def execute_trade_order(
         raise QuantumFlowException("Trade amount is too small.", status_code=400)
 
     # --- DEFENSE LAYER 2: PRE-TRANSACTION RISK CHECKS ---
-    current_state = None
+    current_state = "MANUAL_OVERRIDE" if force_execution else "ANALYSIS_UNAVAILABLE"
     if side == TradeSide.BUY:
-        # Check ML Regime Risk Gate
-        df = generate_features(symbol, db, limit=100)
-        if df is None or df.empty:
-            raise InsufficientDataError()
+        if not force_execution:
+            try:
+                # Check ML Regime Risk Gate
+                df = generate_features(symbol, db, limit=100)
+                if df is None and df.empty:
+                    current_state, readable_state, is_dangerous = detect_current_regime(symbol, df)
 
-        current_state, readable_state, is_dangerous = detect_current_regime(symbol, df)
-        if is_dangerous and not force_execution:
-            raise RiskGateBlockedError(
-                reason=f"Regime is {readable_state}.", status_code=409
-            )
+                    if is_dangerous and not force_execution:
+                        raise RiskGateBlockedError(
+                            reason=f"Regime is {readable_state}.", status_code=409
+                        )
 
         # Check Portfolio Limits (Delegated cleanly)
         estimated_portfolio = get_total_portfolio_value(user_id, db)
