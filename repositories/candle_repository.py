@@ -33,7 +33,7 @@ def get_chronological_for_symbol(db: Session, symbol: str, limit: int) -> list[C
     )
 
 
-def get_latest_prices_by_symbols(db: Session, symbols: list[str]) -> dict[str, object]:
+def get_latest_prices_by_symbols(db: Session, symbols: list[str]) -> dict[str, float]:
     """Get the most recent close price for each symbol."""
 
     if not symbols:
@@ -57,7 +57,7 @@ def get_latest_prices_by_symbols(db: Session, symbols: list[str]) -> dict[str, o
         .all()
     )
 
-    return {c.symbol: float(c.close) for c in latest_candles}
+    return {str(c.symbol): float(str(c.close)) for c in latest_candles}
 
 
 def upsert_candles(db: Session, records: list[dict]):

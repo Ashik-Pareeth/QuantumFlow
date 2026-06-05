@@ -33,9 +33,9 @@ def execute_trade_order(
     side: TradeSide,
     force_execution: bool,
     db: Session,
-    qty: Decimal = None,
-    notional_value: Decimal = None,
-    idempotency_key: str = None,
+    qty: Decimal | None = None,
+    notional_value: Decimal | None = None,
+    idempotency_key: str | None = None,
 ) -> dict:
 
     symbol = symbol.upper()
@@ -89,7 +89,7 @@ def execute_trade_order(
         qty = quantize_quantity(qty)
         trade_value = calculate_trade_value(qty, execution_price)
     else:
-        trade_value = quantize_price(notional_value)
+        trade_value = quantize_price(Decimal(str(notional_value)))
         qty = quantize_quantity(trade_value / execution_price)
 
     if qty <= Decimal("0"):
@@ -105,7 +105,7 @@ def execute_trade_order(
             db, user_id, symbol
         )
         current_exposure = (
-            (current_position.qty * execution_price)
+            Decimal(str(current_position.qty)) * execution_price
             if current_position
             else Decimal("0.00")
         )
@@ -115,9 +115,11 @@ def execute_trade_order(
             trade_value=trade_value,
             estimated_portfolio_value=estimated_portfolio,
         ):
-            raise QuantumFlowException(
-                "Position limit exceeded (>20% of portfolio).", status_code=400
-            )
+            if not force_execution:
+                raise QuantumFlowException(
+                    "Position limit exceeded (>20% of portfolio). Use force_execution to override.",
+                    status_code=400,
+                )
 
     # 3. VIRTUAL ECONOMY EXECUTION
     try:
@@ -131,21 +133,24 @@ def execute_trade_order(
                 db, user_id, symbol, for_update=True, nowait=True
             )
 
+            if not wallet:
+                raise QuantumFlowException("Wallet not found.", status_code=404)
+
             realized_pnl = Decimal("0.00")
 
             if side == TradeSide.BUY:
-                if wallet.cash_balance < trade_value:
+                if Decimal(str(wallet.cash_balance)) < trade_value:
                     raise QuantumFlowException("Insufficient funds.", status_code=400)
 
-                wallet.cash_balance -= trade_value
+                wallet.cash_balance -= trade_value  # type: ignore[assignment]
 
                 if position:
-                    total_historical_cost = position.qty * position.avg_price
-                    new_total_qty = position.qty + qty
-                    position.avg_price = quantize_price(
+                    total_historical_cost = Decimal(str(position.qty)) * Decimal(str(position.avg_price))
+                    new_total_qty = Decimal(str(position.qty)) + qty
+                    position.avg_price = quantize_price(  # type: ignore[assignment]
                         (total_historical_cost + trade_value) / new_total_qty
                     )
-                    position.qty = new_total_qty
+                    position.qty = new_total_qty  # type: ignore[assignment]
                 else:
                     position_repository.create(
                         db,
@@ -156,20 +161,22 @@ def execute_trade_order(
                     )
 
             elif side == TradeSide.SELL:
-                if not position or position.qty < qty:
+                if not position or Decimal(str(position.qty)) < qty:
                     raise InsufficientPositionError(symbol=symbol)
 
+                pos_qty = Decimal(str(position.qty))
+                pos_avg = Decimal(str(position.avg_price))
                 cost_basis = (
-                    (position.qty * position.avg_price)
-                    if position.qty == qty
-                    else (qty * position.avg_price)
+                    (pos_qty * pos_avg)
+                    if pos_qty == qty
+                    else (qty * pos_avg)
                 )
                 realized_pnl = calculate_realized_pnl(trade_value, cost_basis)
 
-                wallet.cash_balance += trade_value
-                position.qty -= qty
+                wallet.cash_balance += trade_value  # type: ignore[assignment]
+                position.qty -= qty  # type: ignore[assignment]
 
-                if position.qty == Decimal("0.0000"):
+                if Decimal(str(position.qty)) == Decimal("0.0000"):
                     position_repository.delete(db, position)
 
             # Record the physical trade

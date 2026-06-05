@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from jose import JWTError, jwt
@@ -46,7 +48,7 @@ def register_new_user(username: str, email: str, password: str, db: Session) -> 
 
         db.flush()
 
-        wallet_repository.create(db, user_id=new_user.id, cash_balance=10000.00)
+        wallet_repository.create(db, user_id=UUID(str(new_user.id)), cash_balance=10000.00)
 
         db.commit()
 
@@ -80,7 +82,7 @@ def authenticate_user(login_identifier: str, password: str, db: Session):
     if not user:
         raise InvalidCredentialsError()
 
-    if not verify_password(password, user.password):
+    if not verify_password(password, str(user.password)):
         raise InvalidCredentialsError()
 
     access_token = create_access_token(data={"sub": str(user.id)})
@@ -100,7 +102,7 @@ def get_user_from_access_token(token: str, db: Session):
     """Validates an access token and returns the authenticated user."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
+        user_id: str | None = payload.get("sub")
         if user_id is None:
             raise AuthenticationFailedError(detail="Token payload invalid.")
 

@@ -11,13 +11,14 @@ def get_by_user_and_symbol(
     symbol: str,
     *,
     for_update: bool = False,
+    nowait: bool = False,
 ) -> Position | None:
     query = db.query(Position).filter(
         Position.user_id == user_id,
         Position.symbol == symbol,
     )
     if for_update:
-        query = query.with_for_update()
+        query = query.with_for_update(nowait=nowait)
     return query.first()
 
 

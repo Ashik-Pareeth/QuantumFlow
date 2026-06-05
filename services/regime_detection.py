@@ -14,7 +14,7 @@ def train_regime_model(symbol: str, db: Session, limit: int = 5000):
     print(f"Training Hidden Markov Model for {symbol} Regimes...")
 
     df = generate_features(symbol, db, limit)
-    if df.empty or df is None:
+    if df is None or df.empty:
         return {"error": "Not enough data"}
 
     df["returns"] = (df["close"] - df["close"].shift(1)) / df["close"] + 1e-6

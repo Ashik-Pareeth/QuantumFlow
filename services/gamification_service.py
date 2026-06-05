@@ -83,10 +83,10 @@ def calculate_live_leaderboard(db: Session) -> list[dict]:
         invested_value = Decimal("0.00")
         if wallet.user_id in user_positions:
             for p in user_positions[wallet.user_id]:
-                current_price = latest_prices.get(p.symbol, p.avg_price)
-                invested_value += p.qty * current_price
+                current_price = Decimal(str(latest_prices.get(str(p.symbol), float(str(p.avg_price)))))
+                invested_value += Decimal(str(p.qty)) * current_price
 
-        total_value = wallet.cash_balance + invested_value
+        total_value = Decimal(str(wallet.cash_balance)) + invested_value
 
         # In a real app, we would join the User table to get their display name
         user = user_repository.get_by_id(db, wallet.user_id)
@@ -119,14 +119,14 @@ def calculate_live_leaderboard(db: Session) -> list[dict]:
                 rank=rank_index,
             )
         else:
-            board_entry.portfolio_value = data["portfolio_value"]
-            board_entry.rank = rank_index
+            board_entry.portfolio_value = Decimal(str(data["portfolio_value"]))  # type: ignore[assignment]
+            board_entry.rank = rank_index  # type: ignore[assignment]
 
         final_output.append(
             {
                 "rank": rank_index,
                 "email": data["email"],
-                "portfolio_value": str(quantize_money(data["portfolio_value"])),
+                "portfolio_value": str(quantize_money(Decimal(str(data["portfolio_value"])))),
             }
         )
 

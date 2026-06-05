@@ -1,6 +1,6 @@
 from decimal import Decimal
 from uuid import UUID
-from pandas_ta.core import Optional
+from typing import Optional
 from pydantic import BaseModel, Field, model_validator
 
 from db.models import TradeSide
@@ -13,10 +13,10 @@ class TradeRequest(BaseModel):
     side: TradeSide
 
     qty: Optional[Decimal] = Field(
-        default=None, gt=0, description="Number of shares to trade"
+        default=None, gt=Decimal("0"), description="Number of shares to trade"
     )
     notional_value: Optional[Decimal] = Field(
-        default=None, gt=0, description="Amount in USD to spend/receive"
+        default=None, gt=Decimal("0"), description="Amount in USD to spend/receive"
     )
     force_execution: bool = False
     idempotency_key: Optional[str] = Field(

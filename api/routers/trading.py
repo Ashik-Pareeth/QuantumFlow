@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
@@ -22,7 +24,7 @@ def place_buy_order(
 ):
     """Executes a BUY order against the user's paper wallet."""
     return execute_trade_order(
-        user_id=current_user.id,
+        user_id=UUID(str(current_user.id)),
         symbol=payload.symbol.upper(),
         qty=payload.qty,
         side=TradeSide.BUY,

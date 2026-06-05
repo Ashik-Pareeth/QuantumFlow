@@ -26,7 +26,7 @@ def get_cached_signal(symbol: str):
         cached_data = redis_client.get(f"signal:{symbol.upper()}")
         if cached_data:
             logger.info(f"CACHE HIT: Returning cached signal for {symbol}")
-            return json.loads(cached_data)
+            return json.loads(str(cached_data))
         return None
     except redis.ConnectionError:
         logger.warning("Redis is unreachable. Bypassing cache.")

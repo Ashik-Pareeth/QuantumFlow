@@ -6,6 +6,14 @@ from sqlalchemy.orm import Session
 from db.models import Trade, TradeSide
 
 
+def get_by_idempotency_key(db: Session, idempotency_key: str) -> Trade | None:
+    return (
+        db.query(Trade)
+        .filter(Trade.idempotency_key == idempotency_key)
+        .first()
+    )
+
+
 def create(
     db: Session,
     *,
@@ -15,6 +23,7 @@ def create(
     qty,
     price,
     pnl,
+    idempotency_key: str,
 ) -> Trade:
     trade = Trade(
         user_id=user_id,
@@ -23,6 +32,7 @@ def create(
         qty=qty,
         price=price,
         pnl=pnl,
+        idempotency_key=idempotency_key,
     )
     db.add(trade)
     return trade
@@ -36,3 +46,4 @@ def list_for_user(db: Session, user_id: UUID, limit: int) -> list[Trade]:
         .limit(limit)
         .all()
     )
+

@@ -7,7 +7,7 @@ except ImportError:  # Pydantic v1 compatibility
     SettingsConfigDict = None
 
 
-class Settings(BaseSettings):
+class Settings(BaseSettings):  # type: ignore[misc]
     database_url: PostgresDsn = Field(...)
     redis_host: str = Field(default="localhost")
     redis_port: int = Field(default=6379)

@@ -1,10 +1,13 @@
 from decimal import Decimal
+from contextlib import contextmanager
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 from uuid import uuid4
 
 import pandas as pd
 import pytest
+from sqlalchemy.orm import Session
 
 from db.models import Candle, Position, Trade, TradeSide, Wallet
 from exceptions.custom_errors import InsufficientPositionError, RiskGateBlockedError
@@ -73,6 +76,10 @@ class TradingDbStub:
     def rollback(self):
         self.rolled_back = True
 
+    @contextmanager
+    def begin_nested(self):
+        yield
+
 
 def make_candle(symbol="AAPL", close="100.0000"):
     return SimpleNamespace(symbol=symbol, close=Decimal(close), time="latest")
@@ -109,7 +116,7 @@ def test_buy_order_creates_position_and_trade(mock_generate, mock_regime):
         qty=Decimal("1.0000"),
         side=TradeSide.BUY,
         force_execution=False,
-        db=db,
+        db=cast(Session, db),
     )
 
     assert result["message"] == "BUY order executed successfully."
@@ -138,7 +145,7 @@ def test_buy_order_is_blocked_by_risk_gate(mock_generate, mock_regime):
             qty=Decimal("1.0000"),
             side=TradeSide.BUY,
             force_execution=False,
-            db=db,
+            db=cast(Session, db),
         )
 
 
@@ -159,7 +166,7 @@ def test_sell_order_executes_without_buy_risk_gate(mock_generate, mock_regime):
         qty=Decimal("2.0000"),
         side=TradeSide.SELL,
         force_execution=False,
-        db=db,
+        db=cast(Session, db),
     )
 
     assert result["message"] == "SELL order executed successfully."
@@ -183,5 +190,5 @@ def test_sell_order_rejects_insufficient_position():
             qty=Decimal("2.0000"),
             side=TradeSide.SELL,
             force_execution=False,
-            db=db,
+            db=cast(Session, db),
         )

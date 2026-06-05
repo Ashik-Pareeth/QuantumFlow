@@ -22,22 +22,22 @@ def get_user_portfolio_summary(user_id: UUID, db: Session) -> dict:
 
     positions = position_repository.list_for_user(db, user_id)
 
-    owned_symbols = [p.symbol for p in positions]
+    owned_symbols = [str(p.symbol) for p in positions]
     latest_prices = candle_repository.get_latest_prices_by_symbols(db, owned_symbols)
 
     formatted_positions = []
     total_invested_value = Decimal("0.00")
 
     for p in positions:
-        current_price = latest_prices.get(p.symbol, p.avg_price)
-        current_value = p.qty * current_price
+        current_price = Decimal(str(latest_prices.get(str(p.symbol), float(str(p.avg_price)))))
+        current_value = Decimal(str(p.qty)) * current_price
         total_invested_value += current_value
 
-        pnl_pct = calculate_unrealized_pnl_pct(current_price, p.avg_price)
+        pnl_pct = calculate_unrealized_pnl_pct(current_price, Decimal(str(p.avg_price)))
 
         formatted_positions.append(
             {
-                "symbol": p.symbol,
+                "symbol": str(p.symbol),
                 "shares": str(p.qty),
                 "average_cost": str(p.avg_price),
                 "current_price": str(current_price),
@@ -46,7 +46,7 @@ def get_user_portfolio_summary(user_id: UUID, db: Session) -> dict:
             }
         )
 
-    total_portfolio_value = wallet.cash_balance + total_invested_value
+    total_portfolio_value = Decimal(str(wallet.cash_balance)) + total_invested_value
 
     return {
         "cash_balance": str(wallet.cash_balance),
@@ -82,16 +82,18 @@ def get_total_portfolio_value(user_id: UUID, db: Session) -> Decimal:
     if not wallet:
         raise QuantumFlowException("Wallet not found", status_code=404)
 
+    cash = Decimal(str(wallet.cash_balance))
+
     # 2. Get active positions
     positions = position_repository.list_for_user(db, user_id)
     if not positions:
-        return wallet.cash_balance
+        return cash
 
     # 3. Fetch latest market prices in a single optimized query
-    owned_symbols = [p.symbol for p in positions]
+    owned_symbols = [str(p.symbol) for p in positions]
     latest_prices = candle_repository.get_latest_prices_by_symbols(db, owned_symbols)
 
     # 4. Calculate total invested value
     invested_value = calculate_invested_value(positions, latest_prices)
 
-    return wallet.cash_balance + invested_value
+    return cash + invested_value

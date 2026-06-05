@@ -14,7 +14,7 @@ MODEL_DIR = "models/"
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 
-def train_ensemble_model(symbol: str, db: Session, limit: int = 2000):
+def train_ensemble_model(symbol: str, db: Session, limit: int = 2000) -> dict:
     print(f"🧠 Training Ensemble Brain for {symbol}...")
 
     df = generate_features(symbol, db, limit)

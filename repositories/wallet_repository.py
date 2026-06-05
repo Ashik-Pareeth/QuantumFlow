@@ -5,10 +5,10 @@ from sqlalchemy.orm import Session
 from db.models import Wallet
 
 
-def get_by_user_id(db: Session, user_id: UUID, *, for_update: bool = False) -> Wallet | None:
+def get_by_user_id(db: Session, user_id: UUID, *, for_update: bool = False, nowait: bool = False) -> Wallet | None:
     query = db.query(Wallet).filter(Wallet.user_id == user_id)
     if for_update:
-        query = query.with_for_update()
+        query = query.with_for_update(nowait=nowait)
     return query.first()
 
 

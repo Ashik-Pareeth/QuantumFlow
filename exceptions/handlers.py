@@ -8,8 +8,10 @@ from core.logger import get_logger
 logger = get_logger(__name__)
 
 
-async def custom_domain_exception_handler(request: Request, exc: QuantumFlowException):
+async def custom_domain_exception_handler(request: Request, exc: Exception):
     """Catches our custom business logic errors."""
+    if not isinstance(exc, QuantumFlowException):
+        raise exc
     logger.warning(
         f"Domain Rule Triggered: {exc.message}",
         extra={"request_path": request.url.path},
@@ -20,8 +22,10 @@ async def custom_domain_exception_handler(request: Request, exc: QuantumFlowExce
     )
 
 
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+async def validation_exception_handler(request: Request, exc: Exception):
     """Cleans up Pydantic validation arrays."""
+    if not isinstance(exc, RequestValidationError):
+        raise exc
     simplified_errors = [
         {"field": err.get("loc")[-1], "message": err.get("msg")} for err in exc.errors()
     ]
@@ -31,7 +35,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+async def http_exception_handler(request: Request, exc: Exception):
+    if not isinstance(exc, StarletteHTTPException):
+        raise exc
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": "Client Error", "message": exc.detail},
