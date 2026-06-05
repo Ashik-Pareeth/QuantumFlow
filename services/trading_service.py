@@ -1,9 +1,9 @@
 import uuid
 from uuid import UUID
 from decimal import Decimal
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
-from datetime import datetime, timezone, timedelta
 
 from db.models import TradeSide
 from domain.liquidation import exceeds_position_limit
@@ -13,14 +13,10 @@ from domain.pnl import (
     quantize_price,
     quantize_quantity,
 )
-from services.feature_engineering import generate_features
-from services.market_data import fetch_and_store_candles
-from services.regime_detection import detect_current_regime
 from services.portfolio_service import get_total_portfolio_value
+from services.market_data import fetch_and_store_candles
 from exceptions.custom_errors import (
-    InsufficientDataError,
     QuantumFlowException,
-    RiskGateBlockedError,
     InsufficientPositionError,
 )
 from repositories import (
@@ -44,7 +40,7 @@ def execute_trade_order(
 
     symbol = symbol.upper()
 
-    # --- DEFENSE LAYER 1: IDEMPOTENCY (Clean Repository Call) ---
+    # --- DEFENSE LAYER 1: IDEMPOTENCY ---
     if idempotency_key:
         existing_trade = trade_repository.get_by_idempotency_key(db, idempotency_key)
         if existing_trade:
@@ -54,29 +50,41 @@ def execute_trade_order(
                 "symbol": symbol,
             }
 
-    # 1. PRICING FETCH & ALGEBRAIC SOLVER
+    # 1. PRICING FETCH & JIT HYDRATION
     latest_candle = candle_repository.get_latest_for_symbol(db, symbol)
 
     needs_hydration = False
     if not latest_candle:
         needs_hydration = True
     else:
-        if datetime.now(timezone.utc) - latest_candle.time > timedelta(minutes=120):
+        # Safely check if the candle is older than 48 hours (handles weekends)
+        candle_time = latest_candle.time
+        if candle_time.tzinfo is None:
+            candle_time = candle_time.replace(tzinfo=timezone.utc)
+
+        if datetime.now(timezone.utc) - candle_time > timedelta(days=2):
             needs_hydration = True
 
     if needs_hydration:
         try:
-            fetch_and_store_candles(symbol, db)
+            # Fetch a small, fast 5-day window to guarantee we capture the latest close
+            fetch_and_store_candles(symbol=symbol, db=db, period="5d", interval="1d")
+            # Re-query the database now that it is hydrated
             latest_candle = candle_repository.get_latest_for_symbol(db, symbol)
-            if not latest_candle:
-                raise InsufficientDataError()
-        except Exception as e:
-            raise QuantumFlowException(
-                f"Failed to fetch market data for {symbol}. Try again later."
-            ) from e
+        except Exception:
+            # If Yahoo Finance is completely down, let it fall through to the 404 below
+            pass
+
+    # Final validation before executing the trade
+    if not latest_candle:
+        raise QuantumFlowException(
+            message=f"No pricing data available or invalid ticker: {symbol}",
+            status_code=404,
+        )
 
     execution_price = Decimal(str(latest_candle.close))
 
+    # 2. ALGEBRAIC SOLVER
     if qty is not None:
         qty = quantize_quantity(qty)
         trade_value = calculate_trade_value(qty, execution_price)
@@ -88,20 +96,7 @@ def execute_trade_order(
         raise QuantumFlowException("Trade amount is too small.", status_code=400)
 
     # --- DEFENSE LAYER 2: PRE-TRANSACTION RISK CHECKS ---
-    current_state = "MANUAL_OVERRIDE" if force_execution else "ANALYSIS_UNAVAILABLE"
     if side == TradeSide.BUY:
-        if not force_execution:
-            try:
-                # Check ML Regime Risk Gate
-                df = generate_features(symbol, db, limit=100)
-                if df is None and df.empty:
-                    current_state, readable_state, is_dangerous = detect_current_regime(symbol, df)
-
-                    if is_dangerous and not force_execution:
-                        raise RiskGateBlockedError(
-                            reason=f"Regime is {readable_state}.", status_code=409
-                        )
-
         # Check Portfolio Limits (Delegated cleanly)
         estimated_portfolio = get_total_portfolio_value(user_id, db)
 
@@ -115,12 +110,16 @@ def execute_trade_order(
             else Decimal("0.00")
         )
 
-        if exceeds_position_limit(current_exposure, trade_value, estimated_portfolio):
+        if exceeds_position_limit(
+            current_exposure=current_exposure,
+            trade_value=trade_value,
+            estimated_portfolio_value=estimated_portfolio,
+        ):
             raise QuantumFlowException(
                 "Position limit exceeded (>20% of portfolio).", status_code=400
             )
 
-    # 2. VIRTUAL ECONOMY EXECUTION
+    # 3. VIRTUAL ECONOMY EXECUTION
     try:
         with db.begin_nested():
 
@@ -195,7 +194,7 @@ def execute_trade_order(
             "trade_value": str(trade_value),
             "realized_pnl": str(realized_pnl),
             "remaining_balance": str(wallet.cash_balance),
-            "market_regime_id": current_state,
+            "market_regime_id": "MANUAL_EXECUTION",
             "trade_id": str(trade.id),
         }
 
